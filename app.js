@@ -44,6 +44,9 @@ async function init() {
     // Start Real-Time Cloud Order Watcher (listens for orders from online/Vercel tablet apps)
     startCloudOrderWatcher();
 
+    // Start daily Storage backup scheduler (uploads JSON to backups/{license_key}/)
+    scheduleStorageBackup();
+
     // ── Tablet App Integration ──
     if (window.electronAPI) {
         window.electronAPI.onTabletOrder((orderData) => {
@@ -1870,35 +1873,39 @@ function syncAllToCloud() {
     if (!SUPABASE_CLIENT || !navigator.onLine) return;
     clearTimeout(_syncTimer);
     _syncTimer = setTimeout(async () => {
+        const licenseKey = localStorage.getItem('mf_license_key') || 'unlicensed';
         try {
-            // Upsert all orders (Sales)
+            // Upsert all orders (Sales) — tagged with license_key
             for (const order of STATE.orders) {
                 await SUPABASE_CLIENT.from('daily_sales').upsert({
-                    order_id:   String(order.id),
-                    sale_date:  order.date ? order.date.slice(0, 10) : null,
-                    customer:   order.customerVal || 'Guest',
-                    total:      order.total,
-                    items_json: JSON.stringify(order.items),
-                    created_at: order.date
+                    order_id:    String(order.id),
+                    license_key: licenseKey,
+                    sale_date:   order.date ? order.date.slice(0, 10) : null,
+                    customer:    order.customerVal || 'Guest',
+                    total:       order.total,
+                    items_json:  JSON.stringify(order.items),
+                    created_at:  order.date
                 }, { onConflict: 'order_id' });
             }
-            // Upsert all inventory snapshot
+            // Upsert inventory snapshot — tagged with license_key
             const syncedAt = new Date().toISOString();
             for (const item of STATE.inventory) {
                 await SUPABASE_CLIENT.from('inventory_snapshot').upsert({
-                    item_name:  item.name,
-                    category:   item.category,
-                    unit:       item.unit || 'Kg',
-                    qty:        item.qty,
-                    avg_cost:   item.avgCost,
-                    synced_at:  syncedAt
+                    item_name:   item.name,
+                    license_key: licenseKey,
+                    category:    item.category,
+                    unit:        item.unit || 'Kg',
+                    qty:         item.qty,
+                    avg_cost:    item.avgCost,
+                    synced_at:   syncedAt
                 }, { onConflict: 'item_name' });
             }
-            // Upsert all purchases (from STATE.purchases)
+            // Upsert purchases — tagged with license_key
             if (STATE.purchases && STATE.purchases.length > 0) {
                 for (const p of STATE.purchases) {
                     await SUPABASE_CLIENT.from('purchase_records').upsert({
                         purchase_id:   String(p.id),
+                        license_key:   licenseKey,
                         item_name:     p.name,
                         category:      p.category || '',
                         unit:          p.unit || 'Kg',
@@ -1911,7 +1918,52 @@ function syncAllToCloud() {
                 }
             }
         } catch(e) { console.warn("Sync failed, will retry next time.", e); }
-    }, 2000); // 2 second debounce
+    }, 2000);
+}
+
+// ─── SUPABASE STORAGE BACKUP (Per License Key Folder) ─────────────────
+// Saves: backups/{license_key}/YYYY-MM-DD_backup.json
+async function uploadBackupToStorage() {
+    if (!SUPABASE_CLIENT || !navigator.onLine) return;
+    const licenseKey = localStorage.getItem('mf_license_key') || 'unlicensed';
+    const today      = new Date().toISOString().slice(0, 10);
+    const fileName   = `${licenseKey}/${today}_backup.json`;
+    const payload = {
+        version:         '1.4.1',
+        exportedAt:      new Date().toISOString(),
+        licenseKey,
+        shopSettings:    STATE.shopSettings,
+        menu:            STATE.menu,
+        orders:          STATE.orders,
+        inventory:       STATE.inventory,
+        purchases:       STATE.purchases || [],
+        categories:      STATE.categories,
+        customCategories: JSON.parse(localStorage.getItem('mf_custom_categories') || '[]')
+    };
+    try {
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const { error } = await SUPABASE_CLIENT.storage
+            .from('backups')
+            .upload(fileName, blob, { upsert: true, contentType: 'application/json' });
+        if (error) throw error;
+        console.log(`[Backup] ✅ Cloud backup saved: backups/${fileName}`);
+    } catch(e) {
+        console.warn('[Backup] Storage upload failed:', e.message);
+    }
+}
+
+// Auto backup once per day
+let _lastBackupDate = null;
+function scheduleStorageBackup() {
+    const today = new Date().toISOString().slice(0, 10);
+    if (_lastBackupDate !== today) {
+        _lastBackupDate = today;
+        setTimeout(() => uploadBackupToStorage(), 8000); // 8s after app loads
+    }
+    setInterval(() => {
+        const d = new Date().toISOString().slice(0, 10);
+        if (_lastBackupDate !== d) { _lastBackupDate = d; uploadBackupToStorage(); }
+    }, 60 * 60 * 1000); // Check every hour
 }
 
 // ─── PURCHASE CLOUD SYNC (Called on each new stock entry) ─────────────────
