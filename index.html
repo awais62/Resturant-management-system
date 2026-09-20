@@ -506,16 +506,19 @@
             <!-- Settings / Cloud Sync View -->
             <section id="settings-view" class="view">
                 <div class="view-header">
-                    <h2>Settings &amp; Backup Location</h2>
+                    <h2>Settings &amp; Data Backup Center</h2>
                 </div>
-                <div class="card" style="max-width:620px; margin: 2rem auto;">
+                <div class="card" style="max-width:760px; margin: 1.5rem auto; padding: 2rem;">
                     
-                    <!-- Shop Branding -->
-                    <h3 style="margin-bottom:0.5rem;"><i class="fa-solid fa-store"></i> Shop Branding</h3>
-                    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:1.5rem;">
-                        Customize the POS with your own Brand Name, Subtitle, and Logo.
+                    <!-- SECTION 1: Shop Branding -->
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 0.5rem;">
+                        <h3 style="margin:0;"><i class="fa-solid fa-store" style="color:var(--primary);"></i> Shop Branding</h3>
+                        <span style="font-size:0.8rem; background:rgba(253,184,19,0.15); color:var(--primary); padding:0.25rem 0.6rem; border-radius:6px; font-weight:600;">Custom Brand</span>
+                    </div>
+                    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:1.2rem;">
+                        Apne POS aur printed receipts par shop ka naam, pata aur phone number customize karein.
                     </p>
-                    <div style="background: var(--bg-light); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 2rem;">
+                    <div style="background: var(--bg-light); padding: 1.5rem; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 2.5rem;">
                         <div class="smart-field" style="margin-bottom: 1rem;">
                             <label class="smart-label">Brand Name</label>
                             <input type="text" id="setting-brand-name" class="smart-input" placeholder="e.g. Mian Foods">
@@ -539,15 +542,71 @@
                                 <img id="setting-logo-preview" src="logo.png" style="max-width: 80px; border-radius: 8px; border: 1px solid var(--border);" onerror="this.style.display='none'">
                             </div>
                         </div>
-                        <button class="btn btn-primary" onclick="saveBrandingSettings()">Save Branding</button>
+                        <button class="btn btn-primary" onclick="saveBrandingSettings()"><i class="fa-solid fa-floppy-disk"></i> Save Branding</button>
                     </div>
 
-                    <h3 style="margin-bottom:0.5rem;"><i class="fa-solid fa-hard-drive"></i> Local Data Backup Location</h3>
-                    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:1.5rem;">
-                        Ek baar folder choose karo — phir har sale/inventory change par automatically D: drive ya kisi bhi folder mein backup save hota rahega.
+                    <!-- SECTION 2: Cloud Backup & Restore (Supabase Storage) -->
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 0.5rem; padding-top:1rem; border-top: 1px solid var(--border);">
+                        <h3 style="margin:0;"><i class="fa-solid fa-cloud" style="color:#38bdf8;"></i> Cloud Backup &amp; Restore (Supabase)</h3>
+                        <span id="sync-status" style="font-size:0.8rem; padding: 0.25rem 0.75rem; background: rgba(34, 197, 94, 0.15); color: #22c55e; border-radius: 50px; font-weight: 600;">
+                            <i class="fa-solid fa-check-circle"></i> Connected
+                        </span>
+                    </div>
+                    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:1.2rem;">
+                        Aapke license key ke private cloud folder (<code>backups/{license_key}/</code>) mein complete system backup upload aur restore karein.
+                    </p>
+
+                    <div style="background: var(--bg-light); padding: 1.5rem; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 2.5rem;">
+                        <!-- Cloud Backup Action -->
+                        <div style="margin-bottom:1.5rem; padding-bottom:1.2rem; border-bottom:1px solid rgba(255,255,255,0.06);">
+                            <h4 style="margin:0 0 0.5rem 0; font-size:1rem; font-weight:600;"><i class="fa-solid fa-cloud-arrow-up"></i> Upload Current Data to Cloud</h4>
+                            <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:0.8rem;">
+                                Instant snapshot of Menu, Orders, Inventory, Purchases aur Settings cloud storage par upload karein.
+                            </p>
+                            <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+                                <button class="btn btn-primary" id="btn-cloud-backup-now" onclick="cloudBackupNow()" style="gap:0.5rem;">
+                                    <i class="fa-solid fa-cloud-arrow-up"></i> Backup to Cloud Now
+                                </button>
+                                <span id="cloud-backup-status-text" style="font-size:0.85rem; color:var(--text-muted);"></span>
+                            </div>
+                        </div>
+
+                        <!-- Cloud Restore Action -->
+                        <div>
+                            <h4 style="margin:0 0 0.5rem 0; font-size:1rem; font-weight:600;"><i class="fa-solid fa-cloud-arrow-down"></i> Restore from Cloud Backup</h4>
+                            <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:0.8rem;">
+                                Cloud mein mojood kisi bhi pichli tareekh ka backup select kar ke restore karein:
+                            </p>
+
+                            <div style="display:flex; gap:0.8rem; flex-wrap:wrap; margin-bottom:0.8rem;">
+                                <select id="cloud-backup-select" class="smart-input" style="flex:1; min-width:220px; padding:0.6rem 0.8rem;">
+                                    <option value="">-- Click 'Refresh List' to fetch cloud backups --</option>
+                                </select>
+                                <button class="btn btn-secondary" id="btn-refresh-cloud-backups" onclick="listCloudBackups()" style="gap:0.4rem;">
+                                    <i class="fa-solid fa-arrows-rotate"></i> Refresh List
+                                </button>
+                                <button class="btn btn-primary" id="btn-restore-cloud" onclick="restoreFromCloud()" style="background:#0284c7; border-color:#0284c7; gap:0.4rem;">
+                                    <i class="fa-solid fa-cloud-arrow-down"></i> Restore Selected
+                                </button>
+                            </div>
+                            <div id="cloud-list-status" style="font-size:0.82rem; color:var(--text-muted); margin-bottom:0.5rem;"></div>
+
+                            <div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.25); border-radius:6px; padding:0.6rem 0.8rem; font-size:0.8rem; color:#f87171;">
+                                <i class="fa-solid fa-triangle-exclamation"></i> <strong>Ahteyat:</strong> Cloud restore karne par aapka mojooda local data select kiye gaye cloud backup se mukammal replace ho jaye ga.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SECTION 3: Local Drive Backup -->
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 0.5rem; padding-top:1rem; border-top: 1px solid var(--border);">
+                        <h3 style="margin:0;"><i class="fa-solid fa-hard-drive" style="color:var(--primary);"></i> Local Hard Drive Auto-Backup</h3>
+                        <span style="font-size:0.8rem; background:rgba(253,184,19,0.15); color:var(--primary); padding:0.25rem 0.6rem; border-radius:6px; font-weight:600;">Chrome / Edge</span>
+                    </div>
+                    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:1.2rem;">
+                        Ek dafa D: Drive ya koi bhi local folder select karein — har sale aur inventory change par automatically backup file save hoti rahegi.
                     </p>
                     
-                    <div style="background: var(--bg-light); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border);">
+                    <div style="background: var(--bg-light); padding: 1.5rem; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 2.5rem;">
                         <!-- Current folder status -->
                         <div id="local-backup-status" style="margin-bottom:1.2rem; padding:0.8rem 1rem; background:rgba(253,184,19,0.08); border-radius:8px; border:1px solid rgba(253,184,19,0.2); font-size:0.9rem;">
                             <i class="fa-solid fa-folder" style="color:var(--primary);"></i>
@@ -555,31 +614,61 @@
                         </div>
 
                         <!-- Action buttons -->
-                        <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+                        <div style="display:flex; gap:0.8rem; flex-wrap:wrap;">
                             <button class="btn btn-primary" onclick="setupLocalBackupFolder()" id="btn-setup-local-backup" style="gap:0.5rem;">
                                 <i class="fa-solid fa-folder-open"></i> Choose Backup Folder (D: Drive)
                             </button>
                             <button class="btn btn-secondary" onclick="triggerLocalBackup()" style="gap:0.5rem;">
-                                <i class="fa-solid fa-floppy-disk"></i> Save Backup Now
+                                <i class="fa-solid fa-floppy-disk"></i> Save Backup to Drive Now
                             </button>
-                            <button class="btn btn-secondary" onclick="clearLocalBackupFolder()" style="gap:0.5rem; color:#ef4444;">
-                                <i class="fa-solid fa-trash"></i> Remove Folder
+                            <button class="btn btn-secondary" onclick="clearLocalBackupFolder()" style="gap:0.5rem; color:#ef4444; border-color:rgba(239,68,68,0.3);">
+                                <i class="fa-solid fa-trash"></i> Disconnect Folder
                             </button>
                         </div>
 
-                        <p style="margin-top:1rem; font-size:0.8rem; color:var(--text-muted);">
-                            <i class="fa-solid fa-circle-info"></i>
-                            Folder structure: <code>YourFolder\{LicenseKey}\2026-09-20_backup.json</code><br>
-                            <i class="fa-solid fa-triangle-exclamation" style="color:#f59e0b;"></i>
-                            Sirf <strong>Chrome / Edge</strong> browser mein kaam karta hai.
+                        <p style="margin-top:1rem; font-size:0.8rem; color:var(--text-muted); margin-bottom:0;">
+                            <i class="fa-solid fa-circle-info"></i> Folder format: <code>YourFolder\{LicenseKey}\YYYY-MM-DD_backup.json</code>
                         </p>
                     </div>
 
-                    <div style="margin-top:2rem; padding-top:1.5rem; border-top:1px solid var(--border);">
-                        <h4 style="margin-bottom:0.75rem;"><i class="fa-solid fa-cloud-bolt"></i> Real-time Cloud Sync</h4>
-                        <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:0;">Your system is fully connected. All sales and inventory changes are synced automatically when the internet is available.</p>
-                        <span id="sync-status" style="display:inline-block; margin-top: 1rem; padding: 0.4rem 1rem; background: rgba(34, 197, 94, 0.15); color: #22c55e; border-radius: 50px; font-size: 0.85rem; font-weight: 600;"><i class="fa-solid fa-check-circle"></i> Connected to Supabase Cloud</span>
+                    <!-- SECTION 4: Direct JSON File Backup & Restore -->
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 0.5rem; padding-top:1rem; border-top: 1px solid var(--border);">
+                        <h3 style="margin:0;"><i class="fa-solid fa-file-code" style="color:#a855f7;"></i> Manual JSON File Backup &amp; Restore</h3>
+                        <span style="font-size:0.8rem; background:rgba(168,85,247,0.15); color:#a855f7; padding:0.25rem 0.6rem; border-radius:6px; font-weight:600;">Universal / Offline</span>
                     </div>
+                    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:1.2rem;">
+                        Aap kisi bhi waqt direct JSON backup file apne computer par download kar sakte hain ya kisi purani backup file ko restore kar sakte hain.
+                    </p>
+
+                    <div style="background: var(--bg-light); padding: 1.5rem; border-radius: 10px; border: 1px solid var(--border);">
+                        <div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:flex-start;">
+                            
+                            <!-- Download JSON -->
+                            <div style="flex:1; min-width:260px; padding-right:1rem; border-right:1px solid rgba(255,255,255,0.06);">
+                                <h4 style="margin:0 0 0.5rem 0; font-size:0.95rem;"><i class="fa-solid fa-download"></i> Download Backup File</h4>
+                                <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:1rem;">
+                                    Sales, Menu, Purchases aur Inventory ka aik complete .json file download karein.
+                                </p>
+                                <button class="btn btn-secondary" onclick="backupData()" style="width:100%; justify-content:center; gap:0.5rem;">
+                                    <i class="fa-solid fa-download"></i> Download .JSON Backup
+                                </button>
+                            </div>
+
+                            <!-- Restore JSON -->
+                            <div style="flex:1; min-width:260px;">
+                                <h4 style="margin:0 0 0.5rem 0; font-size:0.95rem;"><i class="fa-solid fa-upload"></i> Restore from JSON File</h4>
+                                <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:0.8rem;">
+                                    Pehle se download shuda JSON backup file select karein:
+                                </p>
+                                <input type="file" id="local-backup-file-input" accept=".json" class="smart-input" style="padding:0.4rem; margin-bottom:0.8rem; width:100%;">
+                                <button class="btn btn-primary" onclick="restoreFromLocalFile()" style="width:100%; justify-content:center; gap:0.5rem; background:#7c3aed; border-color:#7c3aed;">
+                                    <i class="fa-solid fa-upload"></i> Restore File Data
+                                </button>
+                            </div>
+
+                        </div>
+                    </div>
+
                 </div>
             </section>
 

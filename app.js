@@ -1728,15 +1728,73 @@ function exportToCSV(data, filename) {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
 }
 
-// ─── BACKUP / RESTORE ─────────────────────────────────────────────────
+// ─── UNIFIED RESTORE LOGIC ────────────────────────────────────────────
+window.restoreAllState = function(data) {
+    if (!data || typeof data !== 'object') {
+        throw new Error('Invalid backup file data.');
+    }
+
+    if (data.shopSettings) {
+        STATE.shopSettings = { ...STATE.shopSettings, ...data.shopSettings };
+        localStorage.setItem('mf_shop_settings', JSON.stringify(STATE.shopSettings));
+        applyBranding();
+        if (window.electronAPI && window.electronAPI.updateSettings) {
+            window.electronAPI.updateSettings(STATE.shopSettings);
+        }
+    }
+    if (data.menu && Array.isArray(data.menu)) {
+        STATE.menu = data.menu;
+        saveMenu();
+        if (window.electronAPI && window.electronAPI.updateMenu) {
+            window.electronAPI.updateMenu(STATE.menu);
+        }
+    }
+    if (data.orders && Array.isArray(data.orders)) {
+        STATE.orders = data.orders;
+        saveOrders();
+    }
+    if (data.inventory && Array.isArray(data.inventory)) {
+        STATE.inventory = data.inventory;
+        saveInventory();
+    }
+    if (data.purchases && Array.isArray(data.purchases)) {
+        STATE.purchases = data.purchases;
+        localStorage.setItem('mf_purchases', JSON.stringify(STATE.purchases));
+    }
+    if (data.customCategories) {
+        localStorage.setItem('mf_custom_categories', JSON.stringify(data.customCategories));
+    }
+    if (data.categories && Array.isArray(data.categories)) {
+        STATE.categories = data.categories;
+        saveCategories();
+    }
+
+    // Re-render all views and counters
+    renderBilling();
+    renderAdminTable();
+    renderInventoryTable();
+    renderReports();
+    renderOrderHistory();
+    updateOrderId();
+
+    if (typeof syncAllToCloud === 'function') {
+        syncAllToCloud();
+    }
+    return true;
+};
+
+// ─── DIRECT JSON BACKUP & RESTORE ─────────────────────────────────────
 window.backupData = function() {
+    const licenseKey = localStorage.getItem('mf_license_key') || 'unlicensed';
     const payload = {
         version: '1.4.1',
         exportedAt: new Date().toISOString(),
+        licenseKey,
         shopSettings: STATE.shopSettings,
         menu: STATE.menu,
         orders: STATE.orders,
         inventory: STATE.inventory,
+        purchases: STATE.purchases || [],
         categories: STATE.categories,
         customCategories: JSON.parse(localStorage.getItem('mf_custom_categories') || '[]')
     };
@@ -1745,54 +1803,19 @@ window.backupData = function() {
     const url  = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${brandSafe}_Complete_Backup_${new Date().toISOString().slice(0,10)}.json`;
+    link.download = `${brandSafe}_Backup_${new Date().toISOString().slice(0,10)}.json`;
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
     URL.revokeObjectURL(url);
 };
 
+// Called from file input onchange (e.g. Admin view)
 window.restoreData = function(input) {
     const file = input.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
         try {
             const data = JSON.parse(e.target.result);
-            if (data.shopSettings) {
-                STATE.shopSettings = { ...STATE.shopSettings, ...data.shopSettings };
-                localStorage.setItem('mf_shop_settings', JSON.stringify(STATE.shopSettings));
-                applyBranding();
-                if (window.electronAPI && window.electronAPI.updateSettings) {
-                    window.electronAPI.updateSettings(STATE.shopSettings);
-                }
-            }
-            if (data.menu) {
-                STATE.menu = data.menu;
-                saveMenu();
-            }
-            if (data.orders) {
-                STATE.orders = data.orders;
-                saveOrders();
-            }
-            if (data.inventory) {
-                STATE.inventory = data.inventory;
-                saveInventory();
-            }
-            if (data.customCategories) {
-                localStorage.setItem('mf_custom_categories', JSON.stringify(data.customCategories));
-            }
-            if (data.categories) {
-                STATE.categories = data.categories;
-                saveCategories();
-            }
-            
-            // Re-render all views and counters
-            renderBilling();
-            renderAdminTable();
-            renderInventoryTable();
-            renderReports();
-            renderOrderHistory();
-            updateOrderId();
-            syncAllToCloud();
-
+            window.restoreAllState(data);
             alert('✅ Complete data restored successfully!');
         } catch (err) {
             alert('❌ Invalid backup file format! ' + err.message);
@@ -1801,8 +1824,188 @@ window.restoreData = function(input) {
     reader.readAsText(file);
 };
 
-// ─── AUTO BACKUP SYSTEM ───────────────────────────────────────
-// Legacy local backup server logic has been removed as the app now saves directly to Supabase.
+// Dedicated button in Settings view for local JSON restore
+window.restoreFromLocalFile = function() {
+    const fileInput = document.getElementById('local-backup-file-input');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        alert('⚠️ Barah-e-karam pehle JSON backup file select karein.');
+        return;
+    }
+    const file = fileInput.files[0];
+    if (!confirm(`⚠️ WARNING: Kya aap waqai "${file.name}" se backup restore karna chahte hain?\n\nIs se aapka mojooda data (Menu, Inventory, Sales, Purchases) is file se replace ho jaye ga!`)) {
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            window.restoreAllState(data);
+            alert('✅ Complete data restored successfully from: ' + file.name);
+            fileInput.value = '';
+        } catch (err) {
+            alert('❌ Invalid backup file format! ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+};
+
+// ─── CLOUD BACKUP & RESTORE ACTIONS ───────────────────────────────────
+window.cloudBackupNow = async function() {
+    const btn = document.getElementById('btn-cloud-backup-now');
+    const statusEl = document.getElementById('cloud-backup-status-text');
+
+    if (!navigator.onLine) {
+        alert('❌ Internet connection nahi hai.');
+        return;
+    }
+    if (!SUPABASE_CLIENT) {
+        alert('❌ Supabase se connection nahi ban saka.');
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading...';
+    }
+    if (statusEl) {
+        statusEl.innerHTML = '<span style="color:var(--text-muted);"><i class="fa-solid fa-cloud-arrow-up"></i> Cloud par backup bheja ja raha hai...</span>';
+    }
+
+    try {
+        await uploadBackupToStorage();
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        if (statusEl) {
+            statusEl.innerHTML = `<span style="color:#22c55e; font-weight:600;"><i class="fa-solid fa-circle-check"></i> Last backup: Aaj ${timeStr} par upload ho gaya!</span>`;
+        }
+        alert('✅ Cloud Backup kamyabi se Supabase par save ho gaya!');
+        // Refresh cloud dropdown list
+        await window.listCloudBackups();
+    } catch(err) {
+        console.error('Cloud backup failed:', err);
+        if (statusEl) {
+            statusEl.innerHTML = `<span style="color:#ef4444;"><i class="fa-solid fa-circle-xmark"></i> Backup fail: ${err.message}</span>`;
+        }
+        alert('❌ Cloud backup fail ho gaya: ' + err.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Backup to Cloud Now';
+        }
+    }
+};
+
+window.listCloudBackups = async function() {
+    const selectEl = document.getElementById('cloud-backup-select');
+    const refreshBtn = document.getElementById('btn-refresh-cloud-backups');
+    const statusEl = document.getElementById('cloud-list-status');
+    if (!selectEl) return;
+
+    if (!navigator.onLine) {
+        if (statusEl) statusEl.innerHTML = '<span style="color:#f59e0b;"><i class="fa-solid fa-wifi"></i> Offline — internet connection darkaar hai.</span>';
+        return;
+    }
+    if (!SUPABASE_CLIENT) {
+        if (statusEl) statusEl.innerHTML = '<span style="color:#ef4444;"><i class="fa-solid fa-triangle-exclamation"></i> Supabase se connect nahi hai.</span>';
+        return;
+    }
+
+    if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-spin"></i> Loading...';
+    }
+    if (statusEl) statusEl.textContent = 'Fetching cloud backups list...';
+
+    const licenseKey = localStorage.getItem('mf_license_key') || 'unlicensed';
+
+    try {
+        const { data, error } = await SUPABASE_CLIENT.storage
+            .from('backups')
+            .list(licenseKey, { limit: 100, sortBy: { column: 'name', order: 'desc' } });
+
+        if (error) throw error;
+
+        selectEl.innerHTML = '';
+        const jsonFiles = (data || []).filter(f => f.name && f.name.endsWith('.json'));
+
+        if (jsonFiles.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = '-- Koi Cloud Backup Mojood Nahi Hai --';
+            selectEl.appendChild(opt);
+            if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted);">Koi cloud backup file nahi mili. Pehle "Backup to Cloud Now" karein.</span>';
+        } else {
+            jsonFiles.sort((a, b) => b.name.localeCompare(a.name));
+            jsonFiles.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f.name;
+                const sizeKb = f.metadata?.size ? ` (~${Math.max(1, Math.round(f.metadata.size / 1024))} KB)` : '';
+                opt.textContent = `📁 ${f.name}${sizeKb}`;
+                selectEl.appendChild(opt);
+            });
+            if (statusEl) statusEl.innerHTML = `<span style="color:#22c55e;"><i class="fa-solid fa-check"></i> ${jsonFiles.length} cloud backup(s) dastiyab hain</span>`;
+        }
+    } catch(err) {
+        console.error('List cloud backups error:', err);
+        selectEl.innerHTML = '<option value="">-- List load nahi ho saki --</option>';
+        if (statusEl) statusEl.innerHTML = `<span style="color:#ef4444;"><i class="fa-solid fa-triangle-exclamation"></i> ${err.message}</span>`;
+    } finally {
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i> Refresh List';
+        }
+    }
+};
+
+window.restoreFromCloud = async function() {
+    const selectEl = document.getElementById('cloud-backup-select');
+    const restoreBtn = document.getElementById('btn-restore-cloud');
+    const selectedFile = selectEl ? selectEl.value : null;
+
+    if (!selectedFile) {
+        alert('⚠️ Barah-e-karam list mein se pehle koi backup file select karein.');
+        return;
+    }
+
+    if (!confirm(`⚠️ WARNING: Kya aap waqai Cloud Backup "${selectedFile}" restore karna chahte hain?\n\nIs se aapka current local data (Menu, Inventory, Sales, Purchases) is cloud backup se mukammal replace ho jayega!`)) {
+        return;
+    }
+
+    if (!navigator.onLine || !SUPABASE_CLIENT) {
+        alert('❌ Internet connection ya Supabase connection mojood nahi hai.');
+        return;
+    }
+
+    const licenseKey = localStorage.getItem('mf_license_key') || 'unlicensed';
+    const filePath = `${licenseKey}/${selectedFile}`;
+
+    if (restoreBtn) {
+        restoreBtn.disabled = true;
+        restoreBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Restoring...';
+    }
+
+    try {
+        const { data, error } = await SUPABASE_CLIENT.storage
+            .from('backups')
+            .download(filePath);
+
+        if (error) throw error;
+
+        const text = await data.text();
+        const json = JSON.parse(text);
+
+        window.restoreAllState(json);
+        alert(`✅ Cloud Backup "${selectedFile}" kamyabi se restore ho gaya!`);
+    } catch(err) {
+        console.error('Restore from cloud error:', err);
+        alert('❌ Cloud restore fail ho gaya: ' + err.message);
+    } finally {
+        if (restoreBtn) {
+            restoreBtn.disabled = false;
+            restoreBtn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> Restore Selected';
+        }
+    }
+};
+
 // ─── SUPABASE CLOUD SYNC ──────────────────────────────────────────────
 let SUPABASE_CLIENT = null;
 
@@ -1812,27 +2015,69 @@ const DEFAULT_SB_KEY = 'sb_publishable_bNPmYZY-S6Fnj1D-diCDJw_zDwMxDF5';
 function loadSupabaseSettings() {
     const url = DEFAULT_SB_URL;
     const key = DEFAULT_SB_KEY;
-    if (url) { const el = document.getElementById('supabase-url'); if(el) el.value = url; }
-    if (key) { const el = document.getElementById('supabase-key'); if(el) el.value = key; }
     if (url && key) initSupabase(url, key, false);
 }
 
 function loadSettingsView() {
-    const url = localStorage.getItem('mf_sb_url') || DEFAULT_SB_URL;
-    const key = localStorage.getItem('mf_sb_key') || DEFAULT_SB_KEY;
-    if (url) document.getElementById('supabase-url').value = url;
-    if (key) document.getElementById('supabase-key').value = key;
+    // Fill branding inputs
+    if (STATE.shopSettings) {
+        const brandInput = document.getElementById('setting-brand-name');
+        const subInput   = document.getElementById('setting-brand-subtitle');
+        const addrInput  = document.getElementById('setting-brand-address');
+        const phoneInput = document.getElementById('setting-brand-contact');
+        if (brandInput) brandInput.value = STATE.shopSettings.brandName || '';
+        if (subInput)   subInput.value   = STATE.shopSettings.subtitle || '';
+        if (addrInput)  addrInput.value  = STATE.shopSettings.address || '';
+        if (phoneInput) phoneInput.value = STATE.shopSettings.contact || '';
+    }
+
+    // Supabase status
     const statusEl = document.getElementById('sync-status');
-    if (statusEl) statusEl.textContent = SUPABASE_CLIENT ? '✅ Connected' : '⚠️ Not Connected';
+    if (statusEl) {
+        statusEl.innerHTML = SUPABASE_CLIENT 
+            ? '<i class="fa-solid fa-check-circle"></i> Connected' 
+            : '<i class="fa-solid fa-triangle-exclamation"></i> Disconnected';
+        statusEl.style.color = SUPABASE_CLIENT ? '#22c55e' : '#ef4444';
+    }
+
+    // Local drive backup folder handle status
+    if (typeof loadBackupDirHandle === 'function') {
+        loadBackupDirHandle().then(handle => {
+            const el = document.getElementById('local-backup-folder-name');
+            if (el) {
+                if (handle) {
+                    _localBackupDirHandle = handle;
+                    el.textContent = '✅ Folder: ' + handle.name + ' (auto-saving on changes)';
+                } else {
+                    el.textContent = 'No folder selected — click below to set up';
+                }
+            }
+        });
+    }
+
+    // Auto load cloud backups list
+    if (typeof window.listCloudBackups === 'function') {
+        window.listCloudBackups();
+    }
 }
 
 function initSupabase(url, key, showAlert = true) {
     try {
         SUPABASE_CLIENT = supabase.createClient(url, key);
-        if (showAlert) { const statusEl = document.getElementById('sync-status'); if(statusEl) statusEl.textContent = '✅ Connected'; }
+        if (showAlert) {
+            const statusEl = document.getElementById('sync-status');
+            if (statusEl) {
+                statusEl.innerHTML = '<i class="fa-solid fa-check-circle"></i> Connected';
+                statusEl.style.color = '#22c55e';
+            }
+        }
     } catch(err) {
         console.error('Supabase init error:', err);
-        const statusEl = document.getElementById('sync-status'); if(statusEl) statusEl.textContent = '❌ Connection failed';
+        const statusEl = document.getElementById('sync-status');
+        if (statusEl) {
+            statusEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Connection failed';
+            statusEl.style.color = '#ef4444';
+        }
     }
 }
 
@@ -2025,7 +2270,7 @@ function syncAllToCloud() {
 // ─── SUPABASE STORAGE BACKUP (Per License Key Folder) ─────────────────
 // Saves: backups/{license_key}/YYYY-MM-DD_backup.json
 async function uploadBackupToStorage() {
-    if (!SUPABASE_CLIENT || !navigator.onLine) return;
+    if (!SUPABASE_CLIENT || !navigator.onLine) return false;
     const licenseKey = localStorage.getItem('mf_license_key') || 'unlicensed';
     const today      = new Date().toISOString().slice(0, 10);
     const fileName   = `${licenseKey}/${today}_backup.json`;
@@ -2048,8 +2293,10 @@ async function uploadBackupToStorage() {
             .upload(fileName, blob, { upsert: true, contentType: 'application/json' });
         if (error) throw error;
         console.log(`[Backup] ✅ Cloud backup saved: backups/${fileName}`);
+        return true;
     } catch(e) {
         console.warn('[Backup] Storage upload failed:', e.message);
+        throw e;
     }
 }
 

@@ -247,25 +247,37 @@ function applyTabletBranding(settings) {
 async function fetchMenu(silent = false) {
     let newMenu = null;
     try {
-        const res = await fetch('/api/menu?t=' + Date.now()); // bust cache
+        // Try local server API first (when running on same Wi-Fi as POS)
+        const res = await fetch('/api/menu?t=' + Date.now());
         if (!res.ok) throw new Error('Network error');
         newMenu = await res.json();
     } catch (e) {
-        if (!silent) console.warn("Failed to fetch menu via API, falling back to localStorage...");
+        // Fallback 1: localStorage (synced from POS on same browser)
         const localMenu = localStorage.getItem('mf_menu');
         if (localMenu) {
             newMenu = JSON.parse(localMenu);
         } else {
+            // Fallback 2: Static menu.json bundled with tablet app (Vercel hosting)
             try {
-                const fb = await fetch('../menu.js?t=' + Date.now());
-                const text = await fb.text();
-                const match = text.match(/const INITIAL_MENU = (\[[\s\S]*?\]);/);
-                if (match) {
-                    newMenu = new Function("return " + match[1])();
+                const fb = await fetch('menu.json?t=' + Date.now());
+                if (fb.ok) {
+                    newMenu = await fb.json();
+                } else {
+                    throw new Error('menu.json not found');
                 }
-            } catch (err) {
-                if (!silent) alert('Failed to load menu.');
-                return;
+            } catch (err2) {
+                // Fallback 3: Try parent menu.js (local electron server)
+                try {
+                    const fb2 = await fetch('../menu.js?t=' + Date.now());
+                    const text = await fb2.text();
+                    const match = text.match(/const INITIAL_MENU = (\[[\s\S]*?\]);/);
+                    if (match) {
+                        newMenu = new Function("return " + match[1])();
+                    }
+                } catch (err3) {
+                    if (!silent) console.warn('All menu sources failed.');
+                    return;
+                }
             }
         }
     }
