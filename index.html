@@ -544,15 +544,35 @@
 
                     <h3 style="margin-bottom:0.5rem;"><i class="fa-solid fa-hard-drive"></i> Local Data Backup Location</h3>
                     <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:1.5rem;">
-                        Your data is automatically backed up to the cloud and stored locally on your hard drives for extra safety.
+                        Ek baar folder choose karo — phir har sale/inventory change par automatically D: drive ya kisi bhi folder mein backup save hota rahega.
                     </p>
                     
                     <div style="background: var(--bg-light); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border);">
-                        <p style="margin-bottom: 0.5rem; font-weight: 600;">Main Drive Backup:</p>
-                        <code style="color: var(--primary); font-size: 1.1rem; display: block; margin-bottom: 1.5rem;">C:\Mian G Foods Backup</code>
-                        
-                        <p style="margin-bottom: 0.5rem; font-weight: 600;">Secondary Drive Backup:</p>
-                        <code style="color: var(--primary); font-size: 1.1rem; display: block;">D:\Mian G Foods Backup</code>
+                        <!-- Current folder status -->
+                        <div id="local-backup-status" style="margin-bottom:1.2rem; padding:0.8rem 1rem; background:rgba(253,184,19,0.08); border-radius:8px; border:1px solid rgba(253,184,19,0.2); font-size:0.9rem;">
+                            <i class="fa-solid fa-folder" style="color:var(--primary);"></i>
+                            <span id="local-backup-folder-name" style="margin-left:0.5rem; color:var(--text-muted);">No folder selected — click below to set up</span>
+                        </div>
+
+                        <!-- Action buttons -->
+                        <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+                            <button class="btn btn-primary" onclick="setupLocalBackupFolder()" id="btn-setup-local-backup" style="gap:0.5rem;">
+                                <i class="fa-solid fa-folder-open"></i> Choose Backup Folder (D: Drive)
+                            </button>
+                            <button class="btn btn-secondary" onclick="triggerLocalBackup()" style="gap:0.5rem;">
+                                <i class="fa-solid fa-floppy-disk"></i> Save Backup Now
+                            </button>
+                            <button class="btn btn-secondary" onclick="clearLocalBackupFolder()" style="gap:0.5rem; color:#ef4444;">
+                                <i class="fa-solid fa-trash"></i> Remove Folder
+                            </button>
+                        </div>
+
+                        <p style="margin-top:1rem; font-size:0.8rem; color:var(--text-muted);">
+                            <i class="fa-solid fa-circle-info"></i>
+                            Folder structure: <code>YourFolder\{LicenseKey}\2026-09-20_backup.json</code><br>
+                            <i class="fa-solid fa-triangle-exclamation" style="color:#f59e0b;"></i>
+                            Sirf <strong>Chrome / Edge</strong> browser mein kaam karta hai.
+                        </p>
                     </div>
 
                     <div style="margin-top:2rem; padding-top:1.5rem; border-top:1px solid var(--border);">

@@ -47,6 +47,15 @@ async function init() {
     // Start daily Storage backup scheduler (uploads JSON to backups/{license_key}/)
     scheduleStorageBackup();
 
+    // Load saved local backup folder and update UI
+    loadBackupDirHandle().then(handle => {
+        if (handle) {
+            _localBackupDirHandle = handle;
+            const el = document.getElementById('local-backup-folder-name');
+            if (el) el.textContent = '✅ Folder: ' + handle.name + ' (auto-saving)';
+        }
+    });
+
     // ── Tablet App Integration ──
     if (window.electronAPI) {
         window.electronAPI.onTabletOrder((orderData) => {
@@ -1846,24 +1855,116 @@ window.forceSyncDown = function() {
     alert('Data is fetched automatically when the app starts!');
 };
 
-// ─── LOCAL NODE BACKUP (Hard Drive) ───────────────────────────
-const BACKUP_SERVER_URL = 'http://127.0.0.1:7531/backup';
+// ─── LOCAL DRIVE BACKUP (File System Access API) ──────────────────────
+// Works in Chrome/Edge — writes directly to D: drive or any folder user picks
+// Permission is saved in IndexedDB so it persists across sessions
 
-async function triggerLocalBackup() {
-    const payload = {
-        exportedAt: new Date().toISOString(),
-        menu:       STATE.menu,
-        orders:     STATE.orders,
-        inventory:  STATE.inventory
-    };
+let _localBackupDirHandle = null;
+
+// Save directory handle to IndexedDB
+async function saveBackupDirHandle(handle) {
+    return new Promise((resolve) => {
+        const req = indexedDB.open('MFBackupDB', 1);
+        req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
+        req.onsuccess = e => {
+            const tx = e.target.result.transaction('handles', 'readwrite');
+            tx.objectStore('handles').put(handle, 'backupDir');
+            tx.oncomplete = resolve;
+        };
+    });
+}
+
+// Load directory handle from IndexedDB
+async function loadBackupDirHandle() {
+    return new Promise((resolve) => {
+        const req = indexedDB.open('MFBackupDB', 1);
+        req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
+        req.onsuccess = e => {
+            const tx = e.target.result.transaction('handles', 'readonly');
+            const get = tx.objectStore('handles').get('backupDir');
+            get.onsuccess = () => resolve(get.result || null);
+            get.onerror   = () => resolve(null);
+        };
+        req.onerror = () => resolve(null);
+    });
+}
+
+// User picks backup folder (one time)
+window.setupLocalBackupFolder = async function() {
+    if (!('showDirectoryPicker' in window)) {
+        alert('❌ Local backup is only supported in Chrome or Edge browser.');
+        return;
+    }
     try {
-        await fetch(BACKUP_SERVER_URL, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify(payload)
-        });
-    } catch (err) {
-        // Silently fail if local node server is offline
+        const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        _localBackupDirHandle = handle;
+        await saveBackupDirHandle(handle);
+        // Update UI
+        const el = document.getElementById('local-backup-folder-name');
+        if (el) el.textContent = '✅ Folder: ' + handle.name + ' (auto-saving)';
+        alert('✅ Local backup folder set: ' + handle.name + '\nBackup will now save automatically!');
+        // Trigger first backup immediately
+        await triggerLocalBackup();
+    } catch(e) {
+        if (e.name !== 'AbortError') alert('❌ Folder selection failed: ' + e.message);
+    }
+};
+
+// Remove saved folder
+window.clearLocalBackupFolder = async function() {
+    _localBackupDirHandle = null;
+    const req = indexedDB.open('MFBackupDB', 1);
+    req.onsuccess = e => {
+        const tx = e.target.result.transaction('handles', 'readwrite');
+        tx.objectStore('handles').delete('backupDir');
+    };
+    alert('Local backup folder cleared.');
+};
+
+// Called on every sale / inventory change
+async function triggerLocalBackup() {
+    // Load handle from IndexedDB if not in memory
+    if (!_localBackupDirHandle) {
+        _localBackupDirHandle = await loadBackupDirHandle();
+    }
+    if (!_localBackupDirHandle) return; // No folder chosen yet — skip silently
+
+    try {
+        // Verify permission is still granted
+        const perm = await _localBackupDirHandle.queryPermission({ mode: 'readwrite' });
+        if (perm !== 'granted') {
+            const req = await _localBackupDirHandle.requestPermission({ mode: 'readwrite' });
+            if (req !== 'granted') return;
+        }
+
+        const licenseKey = localStorage.getItem('mf_license_key') || 'unlicensed';
+        const today      = new Date().toISOString().slice(0, 10);
+
+        // Create subfolder: MianFoodsBackup/{license_key}/
+        const subFolder = await _localBackupDirHandle.getDirectoryHandle(licenseKey, { create: true });
+
+        // Build full backup payload
+        const payload = {
+            version:         '1.4.1',
+            exportedAt:      new Date().toISOString(),
+            licenseKey,
+            shopSettings:    STATE.shopSettings,
+            menu:            STATE.menu,
+            orders:          STATE.orders,
+            inventory:       STATE.inventory,
+            purchases:       STATE.purchases || [],
+            categories:      STATE.categories,
+        };
+
+        // Write: YYYY-MM-DD_backup.json (overwrites same day file)
+        const fileHandle = await subFolder.getFileHandle(`${today}_backup.json`, { create: true });
+        const writable   = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(payload, null, 2));
+        await writable.close();
+
+        console.log(`[LocalBackup] ✅ Saved to local drive: ${licenseKey}/${today}_backup.json`);
+    } catch(e) {
+        console.warn('[LocalBackup] Failed:', e.message);
     }
 }
 
