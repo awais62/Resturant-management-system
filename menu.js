@@ -1,0 +1,99 @@
+const INITIAL_MENU = [
+    // ── PIZZA FLAVOURS – Special ──
+    { id: 1,  name: 'The Heaven Pizza',     category: 'Pizza Flavours', variants: [{label:'S', price:450},{label:'M', price:799},{label:'L', price:1299},{label:'XL', price:1699}] },
+    { id: 2,  name: 'Bonfire Pizza',        category: 'Pizza Flavours', variants: [{label:'S', price:450},{label:'M', price:799},{label:'L', price:1299},{label:'XL', price:1699}] },
+    { id: 3,  name: 'Malai Botti Pizza',    category: 'Pizza Flavours', variants: [{label:'S', price:450},{label:'M', price:799},{label:'L', price:1299},{label:'XL', price:1699}] },
+    { id: 4,  name: 'Fire House Pizza',     category: 'Pizza Flavours', variants: [{label:'S', price:450},{label:'M', price:799},{label:'L', price:1299},{label:'XL', price:1699}] },
+    { id: 5,  name: 'Split Pizza',          category: 'Pizza Flavours', variants: [{label:'S', price:450},{label:'M', price:799},{label:'L', price:1299},{label:'XL', price:1699}] },
+    // ── PIZZA FLAVOURS – Traditional ──
+    { id: 6,  name: 'Behari Kabab Pizza',   category: 'Pizza Flavours', variants: [{label:'M', price:1099},{label:'L', price:1499},{label:'XL', price:2099}] },
+    { id: 7,  name: 'Cheese Stuffer Pizza', category: 'Pizza Flavours', variants: [{label:'M', price:1099},{label:'L', price:1499},{label:'XL', price:2099}] },
+    { id: 8,  name: 'Chicken Cheese Stuffer', category: 'Pizza Flavours', variants: [{label:'M', price:1099},{label:'L', price:1499},{label:'XL', price:2099}] },
+    { id: 9,  name: 'Crown Crust Pizza',    category: 'Pizza Flavours', variants: [{label:'M', price:1099},{label:'L', price:1499},{label:'XL', price:2099}] },
+    { id: 10, name: 'Kebab Stuffer Pizza',  category: 'Pizza Flavours', variants: [{label:'M', price:1099},{label:'L', price:1499},{label:'XL', price:2099}] },
+    // ── PIZZA FLAVOURS – Regular ──
+    { id: 11, name: 'Mian Special Pizza',   category: 'Pizza Flavours', variants: [{label:'S', price:350},{label:'M', price:750},{label:'L', price:1050},{label:'XL', price:1550}] },
+    { id: 12, name: 'Tikkah Pizza',         category: 'Pizza Flavours', variants: [{label:'S', price:350},{label:'M', price:750},{label:'L', price:1050},{label:'XL', price:1550}] },
+    { id: 13, name: 'Fajita Sicilian Pizza',category: 'Pizza Flavours', variants: [{label:'S', price:350},{label:'M', price:750},{label:'L', price:1050},{label:'XL', price:1550}] },
+    { id: 14, name: 'Supreme Pizza',        category: 'Pizza Flavours', variants: [{label:'S', price:350},{label:'M', price:750},{label:'L', price:1050},{label:'XL', price:1550}] },
+    { id: 15, name: 'Cheesy Cheese Pizza',  category: 'Pizza Flavours', variants: [{label:'S', price:350},{label:'M', price:750},{label:'L', price:1050},{label:'XL', price:1550}] },
+    // ── PIZZA – Mian Special Deal (Fri/Sat/Sun) ──
+    { id: 16, name: 'Small Pizza (Deal)',   category: 'Pizza Flavours', variants: [{label:'', price:299}] },
+    { id: 17, name: 'Medium Pizza (Deal)',  category: 'Pizza Flavours', variants: [{label:'', price:650}] },
+    { id: 18, name: 'Large Pizza (Deal)',   category: 'Pizza Flavours', variants: [{label:'', price:950}] },
+    // ── EXTRA TOPPING ──
+    { id: 19, name: 'Extra Chicken Topping', category: 'Pizza Flavours', variants: [{label:'S', price:50},{label:'M', price:100},{label:'L', price:150},{label:'XL', price:200}] },
+    { id: 20, name: 'Extra Cheese Topping',  category: 'Pizza Flavours', variants: [{label:'S', price:50},{label:'M', price:100},{label:'L', price:150},{label:'XL', price:200}] },
+
+    // ── BURGER JUNCTION ──
+    { id: 21, name: 'Zinger Burger',        category: 'Burger Junction', variants: [{label:'', price:299}] },
+    { id: 22, name: 'Patty Burger',         category: 'Burger Junction', variants: [{label:'', price:250}] },
+    { id: 23, name: 'Chicken Cheese Burger',category: 'Burger Junction', variants: [{label:'', price:299}] },
+    { id: 24, name: 'Chicken Burger',       category: 'Burger Junction', variants: [{label:'', price:250}] },
+
+    // ── SHAWARMA JUNCTION ──
+    { id: 25, name: 'Chicken Shawarma',     category: 'Shawarma Junction', variants: [{label:'', price:199}] },
+    { id: 26, name: 'Kabab Shawarma',       category: 'Shawarma Junction', variants: [{label:'', price:250}] },
+    { id: 27, name: 'Zinger Shawarma',      category: 'Shawarma Junction', variants: [{label:'', price:250}] },
+    { id: 28, name: 'Pizza Shawarma',       category: 'Shawarma Junction', variants: [{label:'', price:299}] },
+    { id: 29, name: 'Cheese Shawarma',      category: 'Shawarma Junction', variants: [{label:'', price:250}] },
+
+    // ── PASTA JUNCTION ──
+    { id: 30, name: 'Heaven Pasta',         category: 'Pasta Junction', variants: [{label:'F1', price:299},{label:'F2', price:550}] },
+    { id: 31, name: 'Creamy Pasta',         category: 'Pasta Junction', variants: [{label:'F1', price:299},{label:'F2', price:550}] },
+    { id: 32, name: 'Flaming Pasta',        category: 'Pasta Junction', variants: [{label:'F1', price:299},{label:'F2', price:550}] },
+    { id: 33, name: 'Crunchy Pasta',        category: 'Pasta Junction', variants: [{label:'F1', price:399},{label:'F2', price:650}] },
+
+    // ── FRIES JUNCTION ──
+    { id: 34, name: 'Crunch Fries',         category: 'Fries Junction', variants: [{label:'', price:199}] },
+    { id: 35, name: 'Mayo Fries',           category: 'Fries Junction', variants: [{label:'', price:299}] },
+    { id: 36, name: 'Loaded Fries F1',      category: 'Fries Junction', variants: [{label:'', price:399}] },
+    { id: 37, name: 'Loaded Fries F2',      category: 'Fries Junction', variants: [{label:'', price:699}] },
+
+    // ── APPETIZER ──
+    { id: 38, name: 'Nuggets With Mayo',    category: 'Appetizer', variants: [{label:'6 Pcs', price:299},{label:'12 Pcs', price:499}] },
+    { id: 39, name: 'Oven Baked Wings',     category: 'Appetizer', variants: [{label:'6 Pcs', price:399},{label:'12 Pcs', price:499}] },
+    { id: 40, name: 'Crispy Wings',         category: 'Appetizer', variants: [{label:'6 Pcs', price:399},{label:'12 Pcs', price:499}] },
+    { id: 41, name: 'Spin Roll',            category: 'Appetizer', variants: [{label:'6 Pcs', price:599}] },
+    { id: 42, name: 'Chicken Cheese Stick', category: 'Appetizer', variants: [{label:'', price:599}] },
+    { id: 43, name: 'Nuggets (6 Pcs)',      category: 'Appetizer', variants: [{label:'', price:299}] },
+
+    // ── SANDWICH ──
+    { id: 44, name: 'Maxican Sandwich',     category: 'Sandwich', variants: [{label:'', price:599}] },
+    { id: 45, name: 'Jalapino Sandwich',    category: 'Sandwich', variants: [{label:'', price:599}] },
+
+    // ── PARATHA ROLL ──
+    { id: 46, name: 'Chicken Paratha Roll', category: 'Paratha Roll', variants: [{label:'', price:250}] },
+    { id: 47, name: 'Chicken Cheese Paratha',category:'Paratha Roll', variants: [{label:'', price:299}] },
+    { id: 48, name: 'Kabab Paratha Roll',   category: 'Paratha Roll', variants: [{label:'', price:299}] },
+    { id: 49, name: 'Zinger Paratha Roll',  category: 'Paratha Roll', variants: [{label:'', price:299}] },
+    { id: 50, name: 'Zinger Cheese Paratha',category: 'Paratha Roll', variants: [{label:'', price:350}] },
+    { id: 51, name: 'Paratha Sandwich',     category: 'Paratha Roll', variants: [{label:'', price:399}] },
+
+    // ── EXTRA DIP SAUCE ──
+    { id: 52, name: 'Any Sauce (Dip)',      category: 'Extra', variants: [{label:'', price:60}] },
+
+    // ── DEALS ──
+    { id: 53, name: 'Student Deal',      category: 'Deals', desc: '1 Small Pizza + 375ml Cold Drink',                                   variants: [{label:'', price:450}] },
+    { id: 54, name: 'Twin Deal',         category: 'Deals', desc: '2 Small Pizza + 1L Cold Drink',                                      variants: [{label:'', price:999}] },
+    { id: 55, name: 'Kid Deal',          category: 'Deals', desc: '1 Small Pizza + 1 F1 Pasta + 1 Zinger Burger + 1L Cold Drink',       variants: [{label:'', price:1099}] },
+    { id: 56, name: 'Smash Deal',        category: 'Deals', desc: '1 Large Pizza + 1L Cold Drink',                                      variants: [{label:'', price:1399}] },
+    { id: 57, name: 'Spice Storm Combo', category: 'Deals', desc: '1 Spin Roll + 6 Nuggets + 6 Wings + Fries + 1L Cold Drink',          variants: [{label:'', price:1499}] },
+    { id: 58, name: 'Friend Deal',       category: 'Deals', desc: '2 Medium Pizza + 1.5L Cold Drink',                                   variants: [{label:'', price:1699}] },
+    { id: 59, name: 'Stack Attack Trio', category: 'Deals', desc: '3 Zinger Burger + 1L Cold Drink',                                    variants: [{label:'', price:999}] },
+    { id: 60, name: 'Quad Burger Feast', category: 'Deals', desc: '4 Patty Burger + 1L Cold Drink',                                     variants: [{label:'', price:1099}] },
+    { id: 61, name: 'Mian Special Deal', category: 'Deals', desc: '1 Heaven Special Pizza + 1.5L Cold Drink',                           variants: [{label:'', price:1899}] },
+    { id: 62, name: 'Jumbo Deal',        category: 'Deals', desc: '1 Large Pizza + F1 Pasta + 6 Oven Baked Wings + 1L Cold Drink',      variants: [{label:'', price:2099}] },
+    { id: 63, name: 'SunFlower Deal',    category: 'Deals', desc: 'Sunflower Pizza + F2 Pasta + 1L Cold Drink',                         variants: [{label:'', price:2199}] },
+    { id: 64, name: 'Lovly Home Deal',   category: 'Deals', desc: '2 Large Pizza + 1.5L Cold Drink',                                    variants: [{label:'', price:2399}] },
+    { id: 65, name: 'Birthday Brsh Deal',category: 'Deals', desc: '3 Large Pizza + 1.5L Cold Drink',                                    variants: [{label:'', price:4199}] },
+
+    // ── DRINKS ──
+    { id: 66, name: 'Cold Drink 375ml',     category: 'Drinks', variants: [{label:'', price:80}] },
+    { id: 67, name: 'Cold Drink 1L',        category: 'Drinks', variants: [{label:'', price:150}] },
+    { id: 68, name: 'Cold Drink 1.5L',      category: 'Drinks', variants: [{label:'', price:200}] },
+];
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = INITIAL_MENU;
+}

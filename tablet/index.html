@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mian Foods - Tablet Ordering</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="style.css?v=20260920_006">
+</head>
+<body>
+    
+    <div class="app-container">
+        <!-- Modern Top Header -->
+        <header class="top-nav">
+            <div class="nav-left">
+                <div class="logo">
+                    <img id="tablet-brand-logo" src="" alt="" class="brand-logo-img" onerror="this.style.display='none'">
+                    <div id="tablet-fallback-icon" class="logo-icon-box">
+                        <i class="fa-solid fa-utensils"></i>
+                    </div>
+                    <div class="logo-text">
+                        <h1 id="tablet-brand-name">Mian Foods</h1>
+                        <p id="tablet-brand-subtitle">Digital Waiter Ordering</p>
+                    </div>
+                </div>
+
+                <div class="sync-indicator-pill">
+                    <span class="pulse-live-dot"></span>
+                    <span id="sync-text">Live Sync</span>
+                </div>
+
+                <!-- License Status Pill -->
+                <button id="tablet-license-btn" class="license-status-pill" onclick="openTabletLicenseModal()" title="Change or View Connected POS License">
+                    <i class="fa-solid fa-key"></i>
+                    <span id="tablet-license-label">Link POS</span>
+                </button>
+            </div>
+
+            <!-- Search Bar in Header -->
+            <div class="search-container">
+                <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                <input type="text" id="tablet-search" placeholder="Search menu item (e.g. Zinger, Heaven Pizza)..." autocomplete="off">
+                <button id="search-clear-btn" class="search-clear-btn" style="display:none;">
+                    <i class="fa-solid fa-circle-xmark"></i>
+                </button>
+            </div>
+
+            <div class="nav-right">
+                <button id="cart-toggle-btn" class="cart-nav-btn">
+                    <div class="cart-icon-wrapper">
+                        <i class="fa-solid fa-basket-shopping"></i>
+                        <span id="cart-badge" class="badge">0</span>
+                    </div>
+                    <div class="cart-nav-info">
+                        <span class="cart-nav-label">Current Order</span>
+                        <span id="cart-nav-total" class="cart-nav-total">Rs 0</span>
+                    </div>
+                </button>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- Category Tabs Scroll -->
+            <div class="categories-wrapper">
+                <div class="categories-scroll" id="category-tabs">
+                    <!-- Populated dynamically via JS with icons & counts -->
+                </div>
+            </div>
+
+            <!-- Menu Items Grid -->
+            <div class="menu-grid" id="menu-grid">
+                <!-- Injected via JS -->
+            </div>
+        </main>
+
+        <!-- Floating Bottom Order Bar for Quick Thumb Access on Tablet -->
+        <div id="bottom-cart-bar" class="bottom-cart-bar">
+            <div class="bottom-cart-details">
+                <div class="bottom-cart-badge">
+                    <i class="fa-solid fa-basket-shopping"></i>
+                    <span id="bottom-cart-count">0 Items</span>
+                </div>
+                <div class="bottom-cart-total-box">
+                    <span class="bottom-cart-label">Total:</span>
+                    <span id="bottom-cart-price" class="bottom-cart-price">Rs 0</span>
+                </div>
+            </div>
+            <button id="bottom-view-order-btn" class="bottom-cart-action-btn">
+                <span>View Order &amp; Push</span>
+                <i class="fa-solid fa-arrow-right"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Slide-over Cart / Checkout Panel -->
+    <div id="cart-panel" class="cart-panel">
+        <div class="cart-header">
+            <div class="cart-header-title">
+                <div class="cart-header-icon"><i class="fa-solid fa-clipboard-list"></i></div>
+                <div>
+                    <h2>Current Order</h2>
+                    <p class="cart-header-sub">Review &amp; Push to POS</p>
+                </div>
+            </div>
+            <button id="close-cart-btn" class="icon-btn-close">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        
+        <div class="cart-customer">
+            <label class="cart-input-label"><i class="fa-solid fa-chair"></i> Table / Customer Details</label>
+            <div class="input-group">
+                <input type="text" id="customer-name" placeholder="e.g. Table 4 / Anas" autocomplete="off">
+            </div>
+        </div>
+
+        <div class="cart-items" id="cart-items">
+            <!-- Injected via JS -->
+            <div class="empty-state">
+                <i class="fa-solid fa-basket-shopping"></i>
+                <h3>Cart is Empty</h3>
+                <p>Select delicious dishes from the menu to start order</p>
+            </div>
+        </div>
+
+        <div class="cart-footer">
+            <div class="cart-totals">
+                <div class="total-row">
+                    <span>Subtotal</span>
+                    <span id="subtotal">Rs 0</span>
+                </div>
+                <div class="total-row grand-total">
+                    <span>Total Amount</span>
+                    <span id="total">Rs 0</span>
+                </div>
+            </div>
+            
+            <button id="push-order-btn" class="primary-btn pulse-anim">
+                <i class="fa-solid fa-paper-plane"></i> Push Order to POS
+            </button>
+        </div>
+    </div>
+
+    <div id="cart-overlay" class="cart-overlay"></div>
+
+    <!-- Tablet License Linking Modal -->
+    <div id="tablet-license-modal" class="modal">
+        <div class="modal-content glass-effect" style="max-width: 440px;">
+            <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(253, 184, 19, 0.15); display: flex; align-items: center; justify-content: center; margin: 0 auto 1.2rem; color: var(--primary); font-size: 1.5rem; border: 1px solid rgba(253, 184, 19, 0.3);">
+                <i class="fa-solid fa-key"></i>
+            </div>
+            <h2 style="font-size: 1.35rem; font-weight: 800; margin-bottom: 0.4rem;">POS License Link</h2>
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.5rem; line-height: 1.5;">
+                Apne main POS software ka <b>License Key</b> enter karein taake online tablet se orders direct aapke restaurant ke POS me pohnchein.
+            </p>
+            <div style="margin-bottom: 1.2rem; text-align: left;">
+                <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px; display: block;">Restaurant License Key</label>
+                <input type="text" id="tablet-license-input" placeholder="e.g. Food-12345-MianGFoods" style="width: 100%; background: var(--surface-elevated); border: 1px solid var(--surface-border); border-radius: 12px; padding: 12px 16px; color: #fff; font-size: 1.05rem; font-weight: 700; text-align: center; letter-spacing: 1px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--surface-border)'">
+                <p id="tablet-license-msg" style="font-size: 0.82rem; margin-top: 8px; min-height: 1.2rem; text-align: center;"></p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button type="button" onclick="closeTabletLicenseModal()" style="flex: 1; padding: 12px; border-radius: 12px; background: rgba(255,255,255,0.06); border: 1px solid var(--surface-border); color: #fff; font-weight: 700; cursor: pointer;">Cancel</button>
+                <button type="button" id="tablet-license-save-btn" onclick="saveTabletLicense()" class="primary-btn" style="flex: 1; padding: 12px; font-size: 0.95rem;">
+                    <i class="fa-solid fa-link"></i> Connect
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Modal -->
+    <div id="success-modal" class="modal">
+        <div class="modal-content glass-effect">
+            <div class="success-icon"><i class="fa-solid fa-circle-check"></i></div>
+            <h2>Order Sent Successfully!</h2>
+            <p>Order has been transmitted to cashier POS screen.</p>
+            <button id="new-order-btn" class="primary-btn">
+                <i class="fa-solid fa-plus"></i> Take Another Order
+            </button>
+        </div>
+    </div>
+
+    <script src="app.js?v=20260920_006"></script>
+</body>
+</html>
