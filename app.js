@@ -267,10 +267,12 @@ async function loadData() {
     const savedSettings    = localStorage.getItem('mf_shop_settings');
     const savedCustomCats  = localStorage.getItem('mf_custom_categories');
     const savedTabletOrders = localStorage.getItem('mf_pending_tablet_orders');
+    const savedPurchases   = localStorage.getItem('mf_purchases');
     
     STATE.menu      = savedMenu      ? JSON.parse(savedMenu)      : INITIAL_MENU;
     STATE.orders    = savedOrders    ? JSON.parse(savedOrders)    : [];
     STATE.inventory = savedInventory ? JSON.parse(savedInventory) : [];
+    STATE.purchases = savedPurchases ? JSON.parse(savedPurchases) : [];
     STATE.pendingTabletOrders = savedTabletOrders ? JSON.parse(savedTabletOrders) : [];
     if (savedSettings) STATE.shopSettings = { ...STATE.shopSettings, ...JSON.parse(savedSettings) };
 
@@ -1223,6 +1225,23 @@ function handleInventorySave(e) {
     const avgCost  = qty > 0 ? cost / qty : 0;
     const now      = new Date().toISOString();
 
+    // Build purchase entry for Supabase (every stock add = 1 purchase record)
+    const purchaseEntry = {
+        id:       'PUR-' + Date.now(),
+        name,
+        category,
+        unit,
+        qty,
+        avgCost,
+        totalCost: qty * avgCost,
+        date:     now
+    };
+
+    // Save to STATE.purchases (persistent log of all purchases)
+    if (!STATE.purchases) STATE.purchases = [];
+    STATE.purchases.push(purchaseEntry);
+    localStorage.setItem('mf_purchases', JSON.stringify(STATE.purchases));
+
     if (idxStr !== '') {
         const idx = parseInt(idxStr);
         // Add to existing stock
@@ -1244,6 +1263,8 @@ function handleInventorySave(e) {
     saveInventory();
     window.closeInventoryModal();
     syncToCloud();
+    // Sync this purchase entry to Supabase immediately
+    syncPurchaseToCloud(purchaseEntry);
 }
 
 window.showInvItemSuggestions = function(query) {
@@ -1850,7 +1871,7 @@ function syncAllToCloud() {
     clearTimeout(_syncTimer);
     _syncTimer = setTimeout(async () => {
         try {
-            // Upsert all orders
+            // Upsert all orders (Sales)
             for (const order of STATE.orders) {
                 await SUPABASE_CLIENT.from('daily_sales').upsert({
                     order_id:   String(order.id),
@@ -1861,7 +1882,7 @@ function syncAllToCloud() {
                     created_at: order.date
                 }, { onConflict: 'order_id' });
             }
-            // Upsert all inventory
+            // Upsert all inventory snapshot
             const syncedAt = new Date().toISOString();
             for (const item of STATE.inventory) {
                 await SUPABASE_CLIENT.from('inventory_snapshot').upsert({
@@ -1873,8 +1894,45 @@ function syncAllToCloud() {
                     synced_at:  syncedAt
                 }, { onConflict: 'item_name' });
             }
+            // Upsert all purchases (from STATE.purchases)
+            if (STATE.purchases && STATE.purchases.length > 0) {
+                for (const p of STATE.purchases) {
+                    await SUPABASE_CLIENT.from('purchase_records').upsert({
+                        purchase_id:   String(p.id),
+                        item_name:     p.name,
+                        category:      p.category || '',
+                        unit:          p.unit || 'Kg',
+                        qty:           p.qty,
+                        cost_per_unit: p.avgCost || 0,
+                        total_cost:    (p.qty * (p.avgCost || 0)),
+                        purchase_date: p.date ? p.date.slice(0, 10) : new Date().toISOString().slice(0, 10),
+                        synced_at:     syncedAt
+                    }, { onConflict: 'purchase_id' });
+                }
+            }
         } catch(e) { console.warn("Sync failed, will retry next time.", e); }
     }, 2000); // 2 second debounce
+}
+
+// ─── PURCHASE CLOUD SYNC (Called on each new stock entry) ─────────────────
+async function syncPurchaseToCloud(purchaseEntry) {
+    if (!SUPABASE_CLIENT || !navigator.onLine) return;
+    try {
+        await SUPABASE_CLIENT.from('purchase_records').upsert({
+            purchase_id:   String(purchaseEntry.id),
+            item_name:     purchaseEntry.name,
+            category:      purchaseEntry.category || '',
+            unit:          purchaseEntry.unit || 'Kg',
+            qty:           purchaseEntry.qty,
+            cost_per_unit: purchaseEntry.avgCost || 0,
+            total_cost:    (purchaseEntry.qty * (purchaseEntry.avgCost || 0)),
+            purchase_date: purchaseEntry.date ? purchaseEntry.date.slice(0, 10) : new Date().toISOString().slice(0, 10),
+            synced_at:     new Date().toISOString()
+        }, { onConflict: 'purchase_id' });
+        console.log('[Sync] ✅ Purchase synced to Supabase:', purchaseEntry.name);
+    } catch(e) {
+        console.warn('[Sync] Purchase sync failed:', e);
+    }
 }
 
 async function syncAuditToCloud(entry) {
