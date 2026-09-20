@@ -390,6 +390,8 @@ window.saveBrandingSettings = function() {
 function finalizeSettingsSave() {
     localStorage.setItem('mf_shop_settings', JSON.stringify(STATE.shopSettings));
     applyBranding();
+    if (typeof syncAllToCloud === 'function') syncAllToCloud();
+    if (typeof triggerLocalBackup === 'function') triggerLocalBackup();
     alert('Shop branding updated successfully!');
 }
 
@@ -404,10 +406,11 @@ function saveMenu() {
     if (window.electronAPI && window.electronAPI.updateMenu) {
         window.electronAPI.updateMenu(STATE.menu);
     }
+    if (typeof syncAllToCloud === 'function') syncAllToCloud();
+    if (typeof triggerLocalBackup === 'function') triggerLocalBackup();
 }
-function saveOrders()     { localStorage.setItem('mf_orders', JSON.stringify(STATE.orders)); renderReports(); renderOrderHistory(); syncAllToCloud(); triggerLocalBackup(); }
-function saveCategories() { renderCategories(); }
-function saveInventory()  { localStorage.setItem('mf_inventory', JSON.stringify(STATE.inventory)); renderInventoryTable(); syncAllToCloud(); triggerLocalBackup(); }
+function saveOrders()     { localStorage.setItem('mf_orders', JSON.stringify(STATE.orders)); renderReports(); renderOrderHistory(); if (typeof syncAllToCloud === 'function') syncAllToCloud(); if (typeof triggerLocalBackup === 'function') triggerLocalBackup(); }
+function saveInventory()  { localStorage.setItem('mf_inventory', JSON.stringify(STATE.inventory)); renderInventoryTable(); if (typeof syncAllToCloud === 'function') syncAllToCloud(); if (typeof triggerLocalBackup === 'function') triggerLocalBackup(); }
 
 // ─── AUDIT LOG ─────────────────────────────────────────────────────────
 function logAudit(action, originalData) {
@@ -657,7 +660,7 @@ function processCheckout() {
     clearCart();
     document.getElementById('customer-name').value = '';
     updateOrderId();
-    syncToCloud();
+    syncOrderToCloud(order);
 }
 
 function printReceipt(order) {
@@ -971,18 +974,34 @@ function handleItemSave(e) {
         if (manualDesc) newItemData.desc = manualDesc;
     }
 
+    let savedItem = null;
     if (id) {
         const idx = STATE.menu.findIndex(i => i.id == id);
-        if (idx > -1) STATE.menu[idx] = { id: Number(id), ...newItemData };
+        if (idx > -1) {
+            STATE.menu[idx] = { id: Number(id), ...newItemData };
+            savedItem = STATE.menu[idx];
+        }
     } else {
         const newId = STATE.menu.length > 0 ? Math.max(...STATE.menu.map(i => i.id)) + 1 : 1;
-        STATE.menu.push({ id: newId, ...newItemData });
+        savedItem = { id: newId, ...newItemData };
+        STATE.menu.push(savedItem);
     }
     saveMenu(); closeModal(); renderAdminTable(); renderCategories();
+    if (savedItem && typeof syncMenuItemToCloud === 'function') syncMenuItemToCloud(savedItem);
 }
 
 window.editItem   = function(id) { openModal(STATE.menu.find(i => i.id === id)); };
-window.deleteItem = function(id) { if (confirm('Delete this item?')) { STATE.menu = STATE.menu.filter(i => i.id !== id); saveMenu(); renderAdminTable(); } };
+window.deleteItem = function(id) {
+    if (confirm('Delete this item?')) {
+        STATE.menu = STATE.menu.filter(i => i.id !== id);
+        saveMenu();
+        renderAdminTable();
+        if (SUPABASE_CLIENT && navigator.onLine) {
+            const licenseKey = localStorage.getItem('mf_license_key') || 'unlicensed';
+            SUPABASE_CLIENT.from('menu_items').delete().match({ id: id, license_key: licenseKey }).catch(() => {});
+        }
+    }
+};
 window.addToCart  = addToCart;
 window.updateQty  = updateQty;
 window.removeFromCart = removeFromCart;
@@ -1014,6 +1033,8 @@ function saveCategories() {
     if (window.electronAPI && window.electronAPI.updateMenu) {
         window.electronAPI.updateMenu(STATE.menu);  // tablet derives cats from menu
     }
+    if (typeof syncAllToCloud === 'function') syncAllToCloud();
+    if (typeof triggerLocalBackup === 'function') triggerLocalBackup();
 }
 
 window.addCategory = function () {
@@ -1872,12 +1893,15 @@ window.cloudBackupNow = async function() {
     }
 
     try {
+        if (typeof syncAllToCloud === 'function') {
+            await syncAllToCloud(true);
+        }
         await uploadBackupToStorage();
         const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         if (statusEl) {
             statusEl.innerHTML = `<span style="color:#22c55e; font-weight:600;"><i class="fa-solid fa-circle-check"></i> Last backup: Aaj ${timeStr} par upload ho gaya!</span>`;
         }
-        alert('✅ Cloud Backup kamyabi se Supabase par save ho gaya!');
+        alert('✅ Cloud Sync & Backup kamyabi se Supabase par save ho gaya!');
         // Refresh cloud dropdown list
         await window.listCloudBackups();
     } catch(err) {
@@ -2215,38 +2239,45 @@ async function triggerLocalBackup() {
 
 // ─── BACKGROUND SYNCING (Offline-First) ───────────────────────────────
 let _syncTimer = null;
-function syncAllToCloud() {
+async function syncAllToCloud(immediate = false) {
     if (!SUPABASE_CLIENT || !navigator.onLine) return;
     clearTimeout(_syncTimer);
-    _syncTimer = setTimeout(async () => {
+
+    const doSync = async () => {
         const licenseKey = localStorage.getItem('mf_license_key') || 'unlicensed';
+        const syncedAt   = new Date().toISOString();
         try {
-            // Upsert all orders (Sales) — tagged with license_key
-            for (const order of STATE.orders) {
-                await SUPABASE_CLIENT.from('daily_sales').upsert({
-                    order_id:    String(order.id),
-                    license_key: licenseKey,
-                    sale_date:   order.date ? order.date.slice(0, 10) : null,
-                    customer:    order.customerVal || 'Guest',
-                    total:       order.total,
-                    items_json:  JSON.stringify(order.items),
-                    created_at:  order.date
-                }, { onConflict: 'order_id' });
+            // 1. Upsert all orders (Sales) — tagged with license_key
+            if (STATE.orders && STATE.orders.length > 0) {
+                for (const order of STATE.orders) {
+                    await SUPABASE_CLIENT.from('daily_sales').upsert({
+                        order_id:    String(order.id),
+                        license_key: licenseKey,
+                        sale_date:   order.date ? order.date.slice(0, 10) : null,
+                        customer:    order.customerVal || 'Guest',
+                        total:       order.total,
+                        items_json:  JSON.stringify(order.items),
+                        created_at:  order.date
+                    }, { onConflict: 'order_id' });
+                }
             }
-            // Upsert inventory snapshot — tagged with license_key
-            const syncedAt = new Date().toISOString();
-            for (const item of STATE.inventory) {
-                await SUPABASE_CLIENT.from('inventory_snapshot').upsert({
-                    item_name:   item.name,
-                    license_key: licenseKey,
-                    category:    item.category,
-                    unit:        item.unit || 'Kg',
-                    qty:         item.qty,
-                    avg_cost:    item.avgCost,
-                    synced_at:   syncedAt
-                }, { onConflict: 'item_name' });
+
+            // 2. Upsert inventory snapshot — tagged with license_key
+            if (STATE.inventory && STATE.inventory.length > 0) {
+                for (const item of STATE.inventory) {
+                    await SUPABASE_CLIENT.from('inventory_snapshot').upsert({
+                        item_name:   item.name,
+                        license_key: licenseKey,
+                        category:    item.category,
+                        unit:        item.unit || 'Kg',
+                        qty:         item.qty,
+                        avg_cost:    item.avgCost,
+                        synced_at:   syncedAt
+                    }, { onConflict: 'item_name' });
+                }
             }
-            // Upsert purchases — tagged with license_key
+
+            // 3. Upsert purchases — tagged with license_key
             if (STATE.purchases && STATE.purchases.length > 0) {
                 for (const p of STATE.purchases) {
                     await SUPABASE_CLIENT.from('purchase_records').upsert({
@@ -2263,8 +2294,148 @@ function syncAllToCloud() {
                     }, { onConflict: 'purchase_id' });
                 }
             }
-        } catch(e) { console.warn("Sync failed, will retry next time.", e); }
-    }, 2000);
+
+            // 4. Upsert menu items — tagged with license_key
+            if (STATE.menu && STATE.menu.length > 0) {
+                for (const item of STATE.menu) {
+                    const basePrice = (item.variants && item.variants.length > 0) ? item.variants[0].price : (item.price || 0);
+                    try {
+                        await SUPABASE_CLIENT.from('menu_items').upsert({
+                            id:            Number(item.id),
+                            license_key:   licenseKey,
+                            item_name:     item.name,
+                            category:      item.category || '',
+                            variants_json: JSON.stringify(item.variants || []),
+                            base_price:    basePrice,
+                            description:   item.desc || '',
+                            synced_at:     syncedAt
+                        }, { onConflict: 'id,license_key' });
+                    } catch(errM) {
+                        try {
+                            await SUPABASE_CLIENT.from('menu_items').upsert({
+                                id:            Number(item.id),
+                                license_key:   licenseKey,
+                                item_name:     item.name,
+                                category:      item.category || '',
+                                variants_json: JSON.stringify(item.variants || []),
+                                base_price:    basePrice,
+                                description:   item.desc || '',
+                                synced_at:     syncedAt
+                            }, { onConflict: 'id' });
+                        } catch(e2) {}
+                    }
+                }
+            }
+
+            // 5. Cloud Snapshots in audit_log (Menu & Branding fallback)
+            try {
+                await SUPABASE_CLIENT.from('audit_log').insert([
+                    {
+                        id: 'MENU_' + Date.now(),
+                        action: 'menu_snapshot:' + licenseKey,
+                        data_json: JSON.stringify(STATE.menu),
+                        logged_at: syncedAt,
+                        license_key: licenseKey
+                    },
+                    {
+                        id: 'BRAND_' + Date.now(),
+                        action: 'branding_snapshot:' + licenseKey,
+                        data_json: JSON.stringify(STATE.shopSettings),
+                        logged_at: syncedAt,
+                        license_key: licenseKey
+                    }
+                ]);
+            } catch(eAudit) {}
+
+            console.log('[CloudSync] ✅ All POS data (Sales, Stock, Purchases, Menu, Branding) pushed to Supabase!');
+        } catch(e) {
+            console.warn('[CloudSync] Sync failed, will retry next time.', e);
+        }
+    };
+
+    if (immediate) {
+        await doSync();
+    } else {
+        _syncTimer = setTimeout(doSync, 1500);
+    }
+}
+window.syncAllToCloud = syncAllToCloud;
+window.syncToCloud = syncAllToCloud;
+
+// ─── INSTANT SINGLE-RECORD SYNC HELPERS ──────────────────────────────
+async function syncOrderToCloud(order) {
+    if (!SUPABASE_CLIENT || !navigator.onLine) return;
+    const licenseKey = localStorage.getItem('mf_license_key') || 'unlicensed';
+    try {
+        await SUPABASE_CLIENT.from('daily_sales').upsert({
+            order_id:    String(order.id),
+            license_key: licenseKey,
+            sale_date:   order.date ? order.date.slice(0, 10) : new Date().toISOString().slice(0, 10),
+            customer:    order.customerVal || 'Guest',
+            total:       order.total,
+            items_json:  JSON.stringify(order.items),
+            created_at:  order.date || new Date().toISOString()
+        }, { onConflict: 'order_id' });
+        console.log('[Sync] ✅ Order synced to Supabase:', order.id);
+    } catch(e) {
+        console.warn('[Sync] Order sync failed:', e);
+    }
+}
+
+async function syncPurchaseToCloud(purchaseEntry) {
+    if (!SUPABASE_CLIENT || !navigator.onLine) return;
+    const licenseKey = localStorage.getItem('mf_license_key') || 'unlicensed';
+    try {
+        await SUPABASE_CLIENT.from('purchase_records').upsert({
+            purchase_id:   String(purchaseEntry.id),
+            license_key:   licenseKey,
+            item_name:     purchaseEntry.name,
+            category:      purchaseEntry.category || '',
+            unit:          purchaseEntry.unit || 'Kg',
+            qty:           purchaseEntry.qty,
+            cost_per_unit: purchaseEntry.avgCost || 0,
+            total_cost:    (purchaseEntry.qty * (purchaseEntry.avgCost || 0)),
+            purchase_date: purchaseEntry.date ? purchaseEntry.date.slice(0, 10) : new Date().toISOString().slice(0, 10),
+            synced_at:     new Date().toISOString()
+        }, { onConflict: 'purchase_id' });
+        console.log('[Sync] ✅ Purchase synced to Supabase:', purchaseEntry.name);
+    } catch(e) {
+        console.warn('[Sync] Purchase sync failed:', e);
+    }
+}
+
+async function syncMenuItemToCloud(item) {
+    if (!SUPABASE_CLIENT || !navigator.onLine) return;
+    const licenseKey = localStorage.getItem('mf_license_key') || 'unlicensed';
+    const basePrice = (item.variants && item.variants.length > 0) ? item.variants[0].price : (item.price || 0);
+    try {
+        await SUPABASE_CLIENT.from('menu_items').upsert({
+            id:            Number(item.id),
+            license_key:   licenseKey,
+            item_name:     item.name,
+            category:      item.category || '',
+            variants_json: JSON.stringify(item.variants || []),
+            base_price:    basePrice,
+            description:   item.desc || '',
+            synced_at:     new Date().toISOString()
+        }, { onConflict: 'id,license_key' });
+        console.log('[Sync] ✅ Menu item synced to Supabase:', item.name);
+    } catch(e) {
+        try {
+            await SUPABASE_CLIENT.from('menu_items').upsert({
+                id:            Number(item.id),
+                license_key:   licenseKey,
+                item_name:     item.name,
+                category:      item.category || '',
+                variants_json: JSON.stringify(item.variants || []),
+                base_price:    basePrice,
+                description:   item.desc || '',
+                synced_at:     new Date().toISOString()
+            }, { onConflict: 'id' });
+        } catch(e2) {
+            console.warn('[Sync] Menu item sync note:', e.message);
+        }
+    }
 }
 
 // ─── SUPABASE STORAGE BACKUP (Per License Key Folder) ─────────────────
@@ -2314,27 +2485,6 @@ function scheduleStorageBackup() {
     }, 60 * 60 * 1000); // Check every hour
 }
 
-// ─── PURCHASE CLOUD SYNC (Called on each new stock entry) ─────────────────
-async function syncPurchaseToCloud(purchaseEntry) {
-    if (!SUPABASE_CLIENT || !navigator.onLine) return;
-    try {
-        await SUPABASE_CLIENT.from('purchase_records').upsert({
-            purchase_id:   String(purchaseEntry.id),
-            item_name:     purchaseEntry.name,
-            category:      purchaseEntry.category || '',
-            unit:          purchaseEntry.unit || 'Kg',
-            qty:           purchaseEntry.qty,
-            cost_per_unit: purchaseEntry.avgCost || 0,
-            total_cost:    (purchaseEntry.qty * (purchaseEntry.avgCost || 0)),
-            purchase_date: purchaseEntry.date ? purchaseEntry.date.slice(0, 10) : new Date().toISOString().slice(0, 10),
-            synced_at:     new Date().toISOString()
-        }, { onConflict: 'purchase_id' });
-        console.log('[Sync] ✅ Purchase synced to Supabase:', purchaseEntry.name);
-    } catch(e) {
-        console.warn('[Sync] Purchase sync failed:', e);
-    }
-}
-
 async function syncAuditToCloud(entry) {
     if (!SUPABASE_CLIENT || !navigator.onLine) return;
     try {
@@ -2348,7 +2498,7 @@ async function syncAuditToCloud(entry) {
 }
 
 // When internet comes back online, trigger sync automatically
-window.addEventListener('online', syncAllToCloud);
+window.addEventListener('online', () => syncAllToCloud(true));
 
 // ─── CLOUD TABLET ORDERS WATCHER (Supabase Real-Time / Poller) ────────
 let _cloudOrderWatcherRunning = false;
